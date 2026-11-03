@@ -13,16 +13,19 @@ enum Role {
 }
 
 model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  password  String
-  name      String
-  phone     String?
-  avatar    String?
-  role      Role     @default(buyer)
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id              String    @id @default(uuid())
+  email           String    @unique
+  password        String
+  name            String
+  phone           String?
+  avatar          String?
+  role            Role      @default(buyer)
+  isActive        Boolean   @default(true)
+  refreshToken    String?
+  resetOtp        String?
+  resetOtpExpiry  DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   @@map("users")
 }
