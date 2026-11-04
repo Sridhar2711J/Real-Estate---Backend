@@ -21,6 +21,18 @@ const extractParamId = (paramId: string | string[] | undefined): string => {
 };
 
 /**
+ * Enriches property with listingType ('rent' or 'sale')
+ */
+const enrichPropertyWithListingType = (property: any) => {
+  if (!property) return property;
+  const isRent = /for rent|rental|\brent\b/i.test(property.title || '');
+  return {
+    ...property,
+    listingType: (property.listingType || (isRent ? 'rent' : 'sale')) as 'rent' | 'sale',
+  };
+};
+
+/**
  * Helper to build a clean, SEO-friendly slug
  */
 const createSlugString = (title: string): string => {
@@ -105,6 +117,7 @@ export const createProperty = async (
       features,
       price,
       propertyType,
+      listingType,
       city,
       location,
       address,
@@ -301,7 +314,7 @@ export const createProperty = async (
     res.status(201).json({
       success: true,
       message: 'Property created successfully.',
-      property: newProperty,
+      property: enrichPropertyWithListingType(newProperty),
     });
   } catch (error: any) {
     logger.error('Error creating property:', error);
@@ -373,6 +386,7 @@ export const updateProperty = async (
       features,
       price,
       propertyType,
+      listingType,
       city,
       location,
       address,
@@ -562,7 +576,7 @@ export const updateProperty = async (
     res.status(200).json({
       success: true,
       message: 'Property updated successfully.',
-      property: updatedProperty,
+      property: enrichPropertyWithListingType(updatedProperty),
     });
   } catch (error: any) {
     logger.error('Error updating property:', error);
@@ -668,6 +682,7 @@ export const getProperties = async (
       slug,
       city,
       propertyType,
+      listingType,
       minPrice,
       maxPrice,
       bedrooms,
@@ -733,6 +748,18 @@ export const getProperties = async (
         equals: propertyType.trim().toLowerCase(),
         mode: 'insensitive',
       };
+    }
+
+    // Listing Type (Sale vs Rent) filter
+    if (listingType && typeof listingType === 'string' && listingType !== 'all') {
+      const cleanType = listingType.trim().toLowerCase();
+      if (cleanType === 'rent') {
+        whereClause.title = { contains: 'rent', mode: 'insensitive' };
+      } else if (cleanType === 'sale') {
+        whereClause.NOT = [
+          { title: { contains: 'rent', mode: 'insensitive' } },
+        ];
+      }
     }
 
     // Bedrooms filter (1, 2, 3 BHK exact match, 4+ BHK gte)
@@ -840,7 +867,7 @@ export const getProperties = async (
       viewMode: user && user.role === 'seller' && all !== 'true' ? 'seller_own_properties' : 'buyer_public_properties',
       cities: uniqueCities,
       propertyTypes: uniquePropertyTypes,
-      properties,
+      properties: properties.map(enrichPropertyWithListingType),
     });
   } catch (error: any) {
     logger.error('Error fetching properties:', error);
@@ -1006,7 +1033,7 @@ export const getMyProperties = async (
       page: pageNum,
       limit: limitNum,
       count: properties.length,
-      properties,
+      properties: properties.map(enrichPropertyWithListingType),
     });
   } catch (error: any) {
     logger.error('Error fetching seller properties:', error);
@@ -1064,7 +1091,7 @@ export const getPropertyById = async (
 
     res.status(200).json({
       success: true,
-      property,
+      property: enrichPropertyWithListingType(property),
     });
   } catch (error: any) {
     logger.error('Error fetching property by id or slug:', error);
