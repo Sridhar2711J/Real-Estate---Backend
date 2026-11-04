@@ -664,6 +664,7 @@ export const getProperties = async (
   try {
     const user = req.user;
     const {
+      ids,
       slug,
       city,
       propertyType,
@@ -682,6 +683,12 @@ export const getProperties = async (
     } = req.query;
 
     const whereClause: any = {};
+
+    // Specific IDs filter (e.g. for saved / bookmarked properties)
+    if (ids && typeof ids === 'string' && ids.trim()) {
+      const idList = ids.split(',').map((id) => id.trim()).filter(Boolean);
+      whereClause.id = { in: idList };
+    }
 
     // 1. Slug Filter (exact or partial match)
     if (slug && typeof slug === 'string' && slug.trim()) {
@@ -712,10 +719,10 @@ export const getProperties = async (
       whereClause.status = String(status);
     }
 
-    // City filter (case-insensitive)
-    if (city && typeof city === 'string' && city !== 'all') {
+    // City filter (case-insensitive substring or match)
+    if (city && typeof city === 'string' && city !== 'all' && city.trim()) {
       whereClause.city = {
-        equals: city.trim(),
+        contains: city.trim(),
         mode: 'insensitive',
       };
     }
@@ -728,11 +735,18 @@ export const getProperties = async (
       };
     }
 
-    // Bedrooms filter
+    // Bedrooms filter (1, 2, 3 BHK exact match, 4+ BHK gte)
     if (bedrooms && !isNaN(Number(bedrooms))) {
-      whereClause.bedrooms = {
-        gte: Number(bedrooms),
-      };
+      const bedNum = Number(bedrooms);
+      if (bedNum >= 4) {
+        whereClause.bedrooms = {
+          gte: 4,
+        };
+      } else {
+        whereClause.bedrooms = {
+          equals: bedNum,
+        };
+      }
     }
 
     // Bathrooms filter
@@ -783,8 +797,8 @@ export const getProperties = async (
     const limitNum = Math.min(100, Math.max(1, parseInt(limit as string, 10) || 50));
     const skip = (pageNum - 1) * limitNum;
 
-    // Fetch total and results in parallel
-    const [total, properties] = await Promise.all([
+    // Fetch total and results in parallel, along with unique cities & property types for filter options
+    const [total, properties, allSummary] = await Promise.all([
       prisma.property.count({ where: whereClause }),
       prisma.property.findMany({
         where: whereClause,
@@ -800,7 +814,22 @@ export const getProperties = async (
         skip,
         take: limitNum,
       }),
+      prisma.property.findMany({
+        where: user && user.role === 'seller' && all !== 'true' ? { sellerId: user.id } : { status: 'active' },
+        select: {
+          city: true,
+          propertyType: true,
+        },
+      }),
     ]);
+
+    const uniqueCities = Array.from(
+      new Set(allSummary.map((p) => p.city).filter(Boolean))
+    );
+
+    const uniquePropertyTypes = Array.from(
+      new Set(allSummary.map((p) => p.propertyType).filter(Boolean))
+    );
 
     res.status(200).json({
       success: true,
@@ -809,6 +838,8 @@ export const getProperties = async (
       page: pageNum,
       totalPages: Math.ceil(total / limitNum) || 1,
       viewMode: user && user.role === 'seller' && all !== 'true' ? 'seller_own_properties' : 'buyer_public_properties',
+      cities: uniqueCities,
+      propertyTypes: uniquePropertyTypes,
       properties,
     });
   } catch (error: any) {
