@@ -7,6 +7,7 @@ import { swaggerSpec } from './config/swagger';
 import userRoutes from './routes/user.routes';
 import propertyRoutes from './routes/property.routes';
 import bookmarkRoutes from './routes/bookmark.routes';
+import inquiryRoutes from './routes/inquiry.routes';
 
 const app: Application = express();
 
@@ -34,6 +35,7 @@ app.get('/health', (_req: Request, res: Response) => {
 app.use('/api/users', userRoutes);
 app.use('/api/properties', propertyRoutes);
 app.use('/api/bookmarks', bookmarkRoutes);
+app.use('/api/inquiries', inquiryRoutes);
 
 
 

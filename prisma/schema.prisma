@@ -28,6 +28,7 @@ model User {
   updatedAt       DateTime        @updatedAt
   properties      Property[]
   bookmarks       Bookmark[]
+  inquiriesSent   Inquiry[]       @relation("BuyerInquiries")
 
   @@map("users")
 }
@@ -52,6 +53,7 @@ model Property {
   seller       User            @relation(fields: [sellerId], references: [id], onDelete: Cascade)
   images       PropertyImage[]
   bookmarks    Bookmark[]
+  inquiries    Inquiry[]
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
 
@@ -85,3 +87,24 @@ model Bookmark {
   @@map("bookmarks")
 }
 
+model Inquiry {
+  id           String    @id @default(uuid())
+  propertyId   String
+  property     Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  senderId     String?
+  sender       User?     @relation("BuyerInquiries", fields: [senderId], references: [id], onDelete: SetNull)
+  name         String
+  email        String
+  phone        String?   @default("")
+  message      String    @db.Text
+  status       String    @default("new") // "new", "read", "replied"
+  replyMessage String?   @db.Text
+  repliedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([propertyId])
+  @@index([senderId])
+  @@index([status])
+  @@map("inquiries")
+}
