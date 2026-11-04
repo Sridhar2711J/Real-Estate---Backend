@@ -70,6 +70,33 @@ export const requireSeller = (
 };
 
 /**
+ * Middleware ensuring the authenticated user has the 'buyer' role
+ */
+export const requireBuyer = (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): void => {
+  if (!req.user) {
+    res.status(401).json({
+      success: false,
+      message: 'Access denied. Authentication required.',
+    });
+    return;
+  }
+
+  if (req.user.role !== 'buyer') {
+    res.status(403).json({
+      success: false,
+      message: 'Forbidden. Only buyers are authorized to access bookmarks.',
+    });
+    return;
+  }
+
+  next();
+};
+
+/**
  * Optional token authentication middleware.
  * If a valid Bearer token is present, req.user will be populated.
  * If absent or invalid, req.user remains undefined and the request proceeds normally.

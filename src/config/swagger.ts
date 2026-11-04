@@ -112,6 +112,16 @@ const swaggerOptions: swaggerJSDoc.Options = {
             status: { type: 'string', enum: ['active', 'inactive', 'sold'], default: 'active' },
           },
         },
+        Bookmark: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            userId: { type: 'string', format: 'uuid' },
+            propertyId: { type: 'string', format: 'uuid' },
+            createdAt: { type: 'string', format: 'date-time' },
+            property: { $ref: '#/components/schemas/Property' },
+          },
+        },
       },
     },
   },
