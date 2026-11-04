@@ -203,6 +203,34 @@ export const loginUser = async (
 
     const { token, refreshToken } = await generateAuthTokens(user);
 
+    let buyerBookmarks: any[] = [];
+    if (user.role === 'buyer') {
+      buyerBookmarks = await prisma.bookmark.findMany({
+        where: { userId: user.id },
+        include: {
+          property: {
+            include: {
+              images: { orderBy: { sortOrder: 'asc' } },
+              seller: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  phone: true,
+                  avatar: true,
+                  role: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+    }
+
+    const bookmarkCount = buyerBookmarks.length;
+    const savedPropertyIds = buyerBookmarks.map((b) => b.propertyId);
+
     const safeUser = {
       id: user.id,
       name: user.name,
@@ -211,6 +239,13 @@ export const loginUser = async (
       avatar: user.avatar || undefined,
       role: user.role,
       createdAt: user.createdAt.toISOString(),
+      ...(user.role === 'buyer'
+        ? {
+            bookmarkCount,
+            bookmarks: buyerBookmarks,
+            savedPropertyIds,
+          }
+        : {}),
     };
 
     logger.info(`User logged in successfully: ${safeUser.email} (${safeUser.role})`);
@@ -221,6 +256,13 @@ export const loginUser = async (
       user: safeUser,
       token,
       refreshToken,
+      ...(user.role === 'buyer'
+        ? {
+            bookmarkCount,
+            bookmarks: buyerBookmarks,
+            savedPropertyIds,
+          }
+        : {}),
     });
   } catch (error) {
     logger.error('Error during user login:', error);
@@ -368,6 +410,34 @@ export const getMe = async (
       return;
     }
 
+    let buyerBookmarks: any[] = [];
+    if (user.role === 'buyer') {
+      buyerBookmarks = await prisma.bookmark.findMany({
+        where: { userId: user.id },
+        include: {
+          property: {
+            include: {
+              images: { orderBy: { sortOrder: 'asc' } },
+              seller: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  phone: true,
+                  avatar: true,
+                  role: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+    }
+
+    const bookmarkCount = buyerBookmarks.length;
+    const savedPropertyIds = buyerBookmarks.map((b) => b.propertyId);
+
     res.status(200).json({
       success: true,
       user: {
@@ -375,7 +445,21 @@ export const getMe = async (
         phone: user.phone || undefined,
         avatar: user.avatar || undefined,
         createdAt: user.createdAt.toISOString(),
+        ...(user.role === 'buyer'
+          ? {
+              bookmarkCount,
+              bookmarks: buyerBookmarks,
+              savedPropertyIds,
+            }
+          : {}),
       },
+      ...(user.role === 'buyer'
+        ? {
+            bookmarkCount,
+            bookmarks: buyerBookmarks,
+            savedPropertyIds,
+          }
+        : {}),
     });
   } catch (error) {
     logger.error('Error fetching current user:', error);

@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import {
-  getBookmarks,
   addBookmark,
   removeBookmark,
 } from '../controllers/bookmark.controller';
@@ -17,26 +16,8 @@ router.use(authenticateToken, requireBuyer);
  * @swagger
  * tags:
  *   name: Bookmarks
- *   description: Buyer property bookmarks management
+ *   description: Buyer property bookmarks management (ADD, REMOVE)
  */
-
-/**
- * @swagger
- * /api/bookmarks:
- *   get:
- *     summary: Get all bookmarks for the authenticated buyer
- *     tags: [Bookmarks]
- *     security:
- *       - BearerAuth: []
- *     responses:
- *       200:
- *         description: List of buyer bookmarks
- *       401:
- *         description: Unauthorized
- *       403:
- *         description: Forbidden (Buyer role only)
- */
-router.get('/', getBookmarks);
 
 /**
  * @swagger

@@ -20,59 +20,7 @@ const extractParamId = (paramId: string | string[] | undefined): string => {
 };
 
 /**
- * 1. GET ALL BOOKMARKS
- * @desc    Get all bookmarks for the authenticated buyer
- * @route   GET /api/bookmarks
- * @access  Private (Buyer only)
- */
-export const getBookmarks = async (
-  req: AuthenticatedRequest,
-  res: Response
-): Promise<void> => {
-  try {
-    const userId = req.user?.id;
-    if (!userId) {
-      res.status(401).json({
-        success: false,
-        message: 'Access denied. Authentication required.',
-      });
-      return;
-    }
-
-    const bookmarks = await prisma.bookmark.findMany({
-      where: { userId },
-      include: {
-        property: {
-          include: {
-            images: {
-              orderBy: { sortOrder: 'asc' },
-            },
-            seller: {
-              select: sellerSelectFields,
-            },
-          },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    res.status(200).json({
-      success: true,
-      count: bookmarks.length,
-      bookmarks,
-    });
-  } catch (error: any) {
-    logger.error('Error fetching bookmarks:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to retrieve bookmarks',
-      error: error?.message,
-    });
-  }
-};
-
-/**
- * 2. ADD BOOKMARK
+ * 1. ADD BOOKMARK
  * @desc    Add a property to bookmarks
  * @route   POST /api/bookmarks
  * @access  Private (Buyer only)
@@ -124,9 +72,12 @@ export const addBookmark = async (
     });
 
     if (existingBookmark) {
+      const bookmarkCount = await prisma.bookmark.count({ where: { userId } });
       res.status(400).json({
         success: false,
         message: 'Property is already bookmarked',
+        bookmarkCount,
+        isBookmarked: true,
       });
       return;
     }
@@ -150,12 +101,17 @@ export const addBookmark = async (
       },
     });
 
+    const bookmarkCount = await prisma.bookmark.count({ where: { userId } });
+
     logger.info(`Property ${propertyId} bookmarked by buyer ${userId}`);
 
     res.status(201).json({
       success: true,
       message: 'Property bookmarked successfully',
       bookmark,
+      bookmarkCount,
+      propertyId,
+      isBookmarked: true,
     });
   } catch (error: any) {
     logger.error('Error adding bookmark:', error);
@@ -168,7 +124,7 @@ export const addBookmark = async (
 };
 
 /**
- * 3. REMOVE BOOKMARK
+ * 2. REMOVE BOOKMARK
  * @desc    Remove bookmark by Bookmark ID or Property ID
  * @route   DELETE /api/bookmarks/:id
  * @access  Private (Buyer only)
@@ -208,9 +164,11 @@ export const removeBookmark = async (
     });
 
     if (!existingBookmark) {
+      const bookmarkCount = await prisma.bookmark.count({ where: { userId } });
       res.status(404).json({
         success: false,
         message: 'Bookmark not found',
+        bookmarkCount,
       });
       return;
     }
@@ -219,11 +177,16 @@ export const removeBookmark = async (
       where: { id: existingBookmark.id },
     });
 
+    const bookmarkCount = await prisma.bookmark.count({ where: { userId } });
+
     logger.info(`Bookmark ${existingBookmark.id} removed by buyer ${userId}`);
 
     res.status(200).json({
       success: true,
       message: 'Property removed from bookmarks successfully',
+      bookmarkCount,
+      propertyId: existingBookmark.propertyId,
+      isBookmarked: false,
     });
   } catch (error: any) {
     logger.error('Error removing bookmark:', error);
