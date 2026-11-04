@@ -6,6 +6,7 @@ import { env } from '../config/env';
 import { logger } from '../utils/logger';
 import { AuthenticatedRequest } from '../middleware/authenticate';
 import { sendPasswordResetEmail } from '../utils/email';
+import { processAndSaveAvatar } from '../middleware/upload';
 
 /**
  * Helper to generate access and refresh tokens
@@ -381,6 +382,176 @@ export const getMe = async (
     res.status(500).json({
       success: false,
       message: 'Internal server error fetching user data',
+    });
+  }
+};
+
+/**
+ * Update Current User Profile
+ * PUT /api/users/profile
+ */
+export const updateProfile = async (
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      res.status(401).json({
+        success: false,
+        message: 'Unauthorized. Token is missing or invalid.',
+      });
+      return;
+    }
+
+    const { name, phone, avatar } = req.body;
+
+    const dataToUpdate: {
+      name?: string;
+      phone?: string | null;
+      avatar?: string | null;
+    } = {};
+
+    if (name !== undefined) {
+      if (typeof name !== 'string' || !name.trim()) {
+        res.status(400).json({
+          success: false,
+          message: 'Name cannot be empty.',
+        });
+        return;
+      }
+      dataToUpdate.name = name.trim();
+    }
+
+    if (phone !== undefined) {
+      if (phone !== null && typeof phone !== 'string') {
+        res.status(400).json({
+          success: false,
+          message: 'Phone must be a valid string or null.',
+        });
+        return;
+      }
+      dataToUpdate.phone = phone ? phone.trim() : null;
+    }
+
+    if (avatar !== undefined) {
+      if (avatar !== null && typeof avatar !== 'string') {
+        res.status(400).json({
+          success: false,
+          message: 'Avatar must be a valid string or null.',
+        });
+        return;
+      }
+      dataToUpdate.avatar = avatar ? avatar.trim() : null;
+    }
+
+    if (Object.keys(dataToUpdate).length === 0) {
+      res.status(400).json({
+        success: false,
+        message: 'No valid fields provided for profile update.',
+      });
+      return;
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: dataToUpdate,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        avatar: true,
+        role: true,
+        createdAt: true,
+      },
+    });
+
+    logger.info(`Profile updated successfully for user: ${updatedUser.email}`);
+
+    res.status(200).json({
+      success: true,
+      message: 'Profile updated successfully.',
+      user: {
+        ...updatedUser,
+        phone: updatedUser.phone || undefined,
+        avatar: updatedUser.avatar || undefined,
+        createdAt: updatedUser.createdAt.toISOString(),
+      },
+    });
+  } catch (error) {
+    logger.error('Error updating user profile:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error while updating profile.',
+    });
+  }
+};
+
+/**
+ * Upload & Convert Profile Image to WebP
+ * POST /api/users/upload-avatar
+ */
+export const uploadAvatar = async (
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      res.status(401).json({
+        success: false,
+        message: 'Unauthorized. Token is missing or invalid.',
+      });
+      return;
+    }
+
+    if (!req.file || !req.file.buffer) {
+      res.status(400).json({
+        success: false,
+        message: 'Please choose an image file to upload.',
+      });
+      return;
+    }
+
+    // Process buffer, resize & convert to WebP, saved to uploads/userprofile/
+    const avatarPath = await processAndSaveAvatar(req.file.buffer, userId);
+
+    // Update user avatar in PostgreSQL
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: { avatar: avatarPath },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        avatar: true,
+        role: true,
+        createdAt: true,
+      },
+    });
+
+    logger.info(`Profile avatar uploaded and converted to WebP for ${updatedUser.email}: ${avatarPath}`);
+
+    res.status(200).json({
+      success: true,
+      message: 'Profile image uploaded and converted successfully.',
+      avatarUrl: avatarPath,
+      user: {
+        ...updatedUser,
+        phone: updatedUser.phone || undefined,
+        avatar: updatedUser.avatar || undefined,
+        createdAt: updatedUser.createdAt.toISOString(),
+      },
+    });
+  } catch (error) {
+    logger.error('Error uploading profile avatar:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error processing avatar upload.',
     });
   }
 };

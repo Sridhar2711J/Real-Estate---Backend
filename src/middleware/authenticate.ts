@@ -34,10 +34,10 @@ export const authenticateToken = (
     const decoded = jwt.verify(token, env.JWT_SECRET) as AuthenticatedUserPayload;
     req.user = decoded;
     next();
-  } catch {
-    res.status(403).json({
+  } catch (err: any) {
+    res.status(401).json({
       success: false,
-      message: 'Invalid or expired token.',
+      message: err?.name === 'TokenExpiredError' ? 'Token expired.' : 'Invalid or expired token.',
     });
   }
 };

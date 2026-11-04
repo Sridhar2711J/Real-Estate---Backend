@@ -5,11 +5,14 @@ import {
   refreshTokenHandler,
   logoutUser,
   getMe,
+  updateProfile,
+  uploadAvatar,
   forgotPassword,
   verifyOtp,
   resetPassword,
 } from '../controllers/user.controller';
 import { authenticateToken } from '../middleware/authenticate';
+import { handleAvatarUpload } from '../middleware/upload';
 
 const router = Router();
 
@@ -47,6 +50,20 @@ router.post('/logout', logoutUser);
  * @access  Private (Requires Bearer Token)
  */
 router.get('/me', authenticateToken, getMe);
+
+/**
+ * @route   PUT /api/users/profile
+ * @desc    Update current authenticated user profile
+ * @access  Private (Requires Bearer Token)
+ */
+router.put('/profile', authenticateToken, updateProfile);
+
+/**
+ * @route   POST /api/users/upload-avatar
+ * @desc    Upload profile image (max 5MB), convert to WebP, and update user avatar
+ * @access  Private (Requires Bearer Token)
+ */
+router.post('/upload-avatar', authenticateToken, handleAvatarUpload, uploadAvatar);
 
 /**
  * @route   POST /api/users/forgot-password

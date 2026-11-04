@@ -1,5 +1,6 @@
 import express, { Application, Request, Response } from 'express';
 import cors from 'cors';
+import path from 'path';
 import swaggerUi from 'swagger-ui-express';
 import { corsOptions } from './config/cors';
 import { swaggerSpec } from './config/swagger';
@@ -11,6 +12,9 @@ const app: Application = express();
 app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Serve uploaded assets statically
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 // Swagger API Documentation
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
