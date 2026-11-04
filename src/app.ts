@@ -5,6 +5,7 @@ import swaggerUi from 'swagger-ui-express';
 import { corsOptions } from './config/cors';
 import { swaggerSpec } from './config/swagger';
 import userRoutes from './routes/user.routes';
+import propertyRoutes from './routes/property.routes';
 
 const app: Application = express();
 
@@ -30,6 +31,7 @@ app.get('/health', (_req: Request, res: Response) => {
 
 // API Routes
 app.use('/api/users', userRoutes);
+app.use('/api/properties', propertyRoutes);
 
 
 

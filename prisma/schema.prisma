@@ -13,20 +13,58 @@ enum Role {
 }
 
 model User {
-  id              String    @id @default(uuid())
-  email           String    @unique
+  id              String          @id @default(uuid())
+  email           String          @unique
   password        String
   name            String
   phone           String?
   avatar          String?
-  role            Role      @default(buyer)
-  isActive        Boolean   @default(true)
+  role            Role            @default(buyer)
+  isActive        Boolean         @default(true)
   refreshToken    String?
   resetOtp        String?
   resetOtpExpiry  DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  properties      Property[]
 
   @@map("users")
+}
+
+model Property {
+  id           String          @id @default(uuid())
+  slug         String          @unique
+  title        String
+  description  String          @db.Text
+  features     String[]        @default([])
+  price        Float
+  propertyType String
+  city         String
+  location     String
+  address      String?
+  bedrooms     Int             @default(0)
+  bathrooms    Int             @default(0)
+  area         Float           @default(0)
+  coverImage   String
+  status       String          @default("active") // "active", "inactive", "sold"
+  sellerId     String
+  seller       User            @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  images       PropertyImage[]
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@map("properties")
+}
+
+model PropertyImage {
+  id         String   @id @default(uuid())
+  url        String
+  caption    String?
+  sortOrder  Int      @default(0)
+  propertyId String
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@map("property_images")
 }
 
