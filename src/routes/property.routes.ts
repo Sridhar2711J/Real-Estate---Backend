@@ -6,14 +6,13 @@ import {
   getProperties,
   getMyProperties,
   getPropertyById,
-  uploadPropertyImage,
 } from '../controllers/property.controller';
 import {
   authenticateToken,
   requireSeller,
   optionalAuthenticateToken,
 } from '../middleware/authenticate';
-import { handlePropertyImageUpload } from '../middleware/upload';
+import { handlePropertyFilesUpload } from '../middleware/upload';
 
 const router = Router();
 
@@ -124,41 +123,7 @@ router.get('/seller/my-properties', authenticateToken, requireSeller, getMyPrope
  *       403:
  *         description: Forbidden (Requires seller role)
  */
-router.post('/', authenticateToken, requireSeller, createProperty);
-
-/**
- * @swagger
- * /api/properties/upload-image:
- *   post:
- *     summary: Upload and optimize a property image (WebP)
- *     tags: [Properties]
- *     security:
- *       - BearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         multipart/form-data:
- *           schema:
- *             type: object
- *             properties:
- *               image:
- *                 type: string
- *                 format: binary
- *     responses:
- *       200:
- *         description: Uploaded image URL
- *       400:
- *         description: Invalid file
- *       403:
- *         description: Forbidden
- */
-router.post(
-  '/upload-image',
-  authenticateToken,
-  requireSeller,
-  handlePropertyImageUpload,
-  uploadPropertyImage
-);
+router.post('/', authenticateToken, requireSeller, handlePropertyFilesUpload, createProperty);
 
 /**
  * @swagger
@@ -208,7 +173,7 @@ router.get('/:id', optionalAuthenticateToken, getPropertyById);
  *       404:
  *         description: Property not found
  */
-router.put('/:id', authenticateToken, requireSeller, updateProperty);
+router.put('/:id', authenticateToken, requireSeller, handlePropertyFilesUpload, updateProperty);
 
 /**
  * @swagger

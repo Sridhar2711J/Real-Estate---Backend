@@ -117,7 +117,7 @@ export const createProperty = async (
     } = req.body;
 
     // Field Validations
-    if (!title || typeof title !== 'string' || !title.trim()) {
+    if (!title || !String(title).trim()) {
       res.status(400).json({
         success: false,
         message: 'Title is required.',
@@ -125,7 +125,7 @@ export const createProperty = async (
       return;
     }
 
-    if (!propertyType || typeof propertyType !== 'string' || !propertyType.trim()) {
+    if (!propertyType || !String(propertyType).trim()) {
       res.status(400).json({
         success: false,
         message: 'Property type is required.',
@@ -133,15 +133,25 @@ export const createProperty = async (
       return;
     }
 
-    if (price === undefined || isNaN(Number(price)) || Number(price) <= 0) {
+    // Price validation: only check that price is provided (!empty)
+    if (price === undefined || price === null || String(price).trim() === '') {
       res.status(400).json({
         success: false,
-        message: 'A valid positive price is required.',
+        message: 'Price is required.',
       });
       return;
     }
 
-    if (!city || typeof city !== 'string' || !city.trim()) {
+    // Area validation: only check that area is provided (!empty)
+    if (area === undefined || area === null || String(area).trim() === '') {
+      res.status(400).json({
+        success: false,
+        message: 'Area is required.',
+      });
+      return;
+    }
+
+    if (!city || !String(city).trim()) {
       res.status(400).json({
         success: false,
         message: 'City is required.',
@@ -149,7 +159,7 @@ export const createProperty = async (
       return;
     }
 
-    if (!location || typeof location !== 'string' || !location.trim()) {
+    if (!location || !String(location).trim()) {
       res.status(400).json({
         success: false,
         message: 'Location is required.',
@@ -157,7 +167,7 @@ export const createProperty = async (
       return;
     }
 
-    if (!description || typeof description !== 'string' || !description.trim()) {
+    if (!description || !String(description).trim()) {
       res.status(400).json({
         success: false,
         message: 'Description is required.',
@@ -165,10 +175,21 @@ export const createProperty = async (
       return;
     }
 
-    if (!coverImage || typeof coverImage !== 'string' || !coverImage.trim()) {
+    // Process uploaded files from Multer
+    const files = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
+    const coverFile = files?.['coverImage']?.[0];
+    let finalCoverImage = '';
+
+    if (coverFile && coverFile.buffer) {
+      finalCoverImage = await processAndSavePropertyImage(coverFile.buffer, user.id);
+    } else if (coverImage && typeof coverImage === 'string' && coverImage.trim()) {
+      finalCoverImage = await saveImageIfBase64(coverImage.trim(), user.id);
+    }
+
+    if (!finalCoverImage) {
       res.status(400).json({
         success: false,
-        message: 'Cover image is required.',
+        message: 'Cover image is required. Please upload an image file.',
       });
       return;
     }
@@ -176,26 +197,68 @@ export const createProperty = async (
     // Generate unique slug
     const finalSlug = await generateUniqueSlug(title, customSlug);
 
-    // Parse features
-    const parsedFeatures: string[] = Array.isArray(features)
-      ? features.map((f: any) => String(f).trim()).filter(Boolean)
-      : [];
+    // Parse features (supports array or JSON string from FormData)
+    let parsedFeatures: string[] = [];
+    if (typeof features === 'string') {
+      try {
+        parsedFeatures = JSON.parse(features);
+      } catch {
+        parsedFeatures = features.split(',').map((f) => f.trim()).filter(Boolean);
+      }
+    } else if (Array.isArray(features)) {
+      parsedFeatures = features.map((f: any) => String(f).trim()).filter(Boolean);
+    }
 
-    // Process cover image (convert base64 to WebP file if sent directly)
-    const finalCoverImage = await saveImageIfBase64(coverImage.trim(), user.id);
+    // Parse gallery images (handles uploaded files and/or metadata JSON)
+    const galleryFiles = files?.['images'] || [];
+    let imagesMetadata: any[] = [];
+    if (typeof req.body.imagesMetadata === 'string') {
+      try {
+        imagesMetadata = JSON.parse(req.body.imagesMetadata);
+      } catch {
+        imagesMetadata = [];
+      }
+    } else if (Array.isArray(req.body.imagesMetadata)) {
+      imagesMetadata = req.body.imagesMetadata;
+    }
 
-    // Parse gallery images (convert base64 to WebP files if sent directly)
-    const parsedImages = Array.isArray(images)
-      ? await Promise.all(
-          images
-            .filter((img: any) => img && typeof img.url === 'string' && img.url.trim())
-            .map(async (img: any, idx: number) => ({
-              url: await saveImageIfBase64(img.url.trim(), user.id),
-              caption: img.caption ? String(img.caption).trim() : null,
-              sortOrder: typeof img.sortOrder === 'number' ? img.sortOrder : idx + 1,
-            }))
-        )
-      : [];
+    const parsedImages: { url: string; caption?: string | null; sortOrder: number }[] = [];
+
+    // Save newly uploaded gallery files
+    for (let i = 0; i < galleryFiles.length; i++) {
+      const gFile = galleryFiles[i];
+      if (gFile && gFile.buffer) {
+        const savedUrl = await processAndSavePropertyImage(gFile.buffer, user.id);
+        const meta = imagesMetadata[i] || {};
+        parsedImages.push({
+          url: savedUrl,
+          caption: meta.caption ? String(meta.caption).trim() : null,
+          sortOrder: typeof meta.sortOrder === 'number' ? meta.sortOrder : i + 1,
+        });
+      }
+    }
+
+    // Also support any existing images array if passed as JSON
+    let rawImages = images || req.body.images;
+    if (typeof rawImages === 'string') {
+      try {
+        rawImages = JSON.parse(rawImages);
+      } catch {
+        rawImages = [];
+      }
+    }
+    if (Array.isArray(rawImages)) {
+      for (const img of rawImages) {
+        if (img && typeof img.url === 'string' && img.url.trim()) {
+          const processedUrl = await saveImageIfBase64(img.url.trim(), user.id);
+          parsedImages.push({
+            url: processedUrl,
+            caption: img.caption ? String(img.caption).trim() : null,
+            sortOrder: typeof img.sortOrder === 'number' ? img.sortOrder : parsedImages.length + 1,
+          });
+        }
+      }
+    }
 
     // Valid status values
     const allowedStatuses = ['active', 'inactive', 'sold'];
@@ -204,18 +267,18 @@ export const createProperty = async (
     // Create in Database with sellerId and unique slug
     const newProperty = await prisma.property.create({
       data: {
-        title: title.trim(),
+        title: String(title).trim(),
         slug: finalSlug,
-        description: description.trim(),
+        description: String(description).trim(),
         features: parsedFeatures,
-        price: Number(price),
-        propertyType: propertyType.trim().toLowerCase(),
-        city: city.trim(),
-        location: location.trim(),
-        address: address && typeof address === 'string' ? address.trim() : null,
+        price: Number(price) || 0,
+        propertyType: String(propertyType).trim().toLowerCase(),
+        city: String(city).trim(),
+        location: String(location).trim(),
+        address: address && typeof address === 'string' && address.trim() ? address.trim() : null,
         bedrooms: bedrooms !== undefined && !isNaN(Number(bedrooms)) ? Number(bedrooms) : 0,
         bathrooms: bathrooms !== undefined && !isNaN(Number(bathrooms)) ? Number(bathrooms) : 0,
-        area: area !== undefined && !isNaN(Number(area)) ? Number(area) : 0,
+        area: Number(area) || 0,
         coverImage: finalCoverImage,
         status: finalStatus,
         sellerId: user.id, // Strictly tied to authenticated seller
@@ -351,8 +414,9 @@ export const updateProperty = async (
     if (propertyType !== undefined && typeof propertyType === 'string' && propertyType.trim()) {
       updateData.propertyType = propertyType.trim().toLowerCase();
     }
-    if (price !== undefined && !isNaN(Number(price)) && Number(price) > 0) {
-      updateData.price = Number(price);
+    // Price validation: only check that price is provided (!empty)
+    if (price !== undefined && price !== null && String(price).trim() !== '') {
+      updateData.price = Number(price) || 0;
     }
     if (city !== undefined && typeof city === 'string' && city.trim()) {
       updateData.city = city.trim();
@@ -369,38 +433,108 @@ export const updateProperty = async (
     if (bathrooms !== undefined && !isNaN(Number(bathrooms))) {
       updateData.bathrooms = Number(bathrooms);
     }
-    if (area !== undefined && !isNaN(Number(area))) {
-      updateData.area = Number(area);
+    // Area validation: only check that area is provided (!empty)
+    if (area !== undefined && area !== null && String(area).trim() !== '') {
+      updateData.area = Number(area) || 0;
     }
-    if (coverImage !== undefined && typeof coverImage === 'string' && coverImage.trim()) {
+
+    // Process cover image (uploaded file or string URL)
+    const files = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
+    const coverFile = files?.['coverImage']?.[0];
+    if (coverFile && coverFile.buffer) {
+      updateData.coverImage = await processAndSavePropertyImage(coverFile.buffer, user.id);
+    } else if (coverImage !== undefined && typeof coverImage === 'string' && coverImage.trim()) {
       updateData.coverImage = await saveImageIfBase64(coverImage.trim(), user.id);
     }
+
     if (status !== undefined) {
       const allowedStatuses = ['active', 'inactive', 'sold'];
       if (allowedStatuses.includes(status)) {
         updateData.status = status;
       }
     }
-    if (features !== undefined && Array.isArray(features)) {
-      updateData.features = features.map((f: any) => String(f).trim()).filter(Boolean);
+    if (features !== undefined) {
+      let parsedFeatures: string[] = [];
+      if (typeof features === 'string') {
+        try {
+          parsedFeatures = JSON.parse(features);
+        } catch {
+          parsedFeatures = features.split(',').map((f) => f.trim()).filter(Boolean);
+        }
+      } else if (Array.isArray(features)) {
+        parsedFeatures = features.map((f: any) => String(f).trim()).filter(Boolean);
+      }
+      updateData.features = parsedFeatures;
     }
 
-    // If new images array provided, replace existing images
-    if (images !== undefined && Array.isArray(images)) {
+    // Process gallery images (handles uploaded files and/or existing images)
+    const galleryFiles = files?.['images'] || [];
+    let imagesMetadata: any[] = [];
+    if (typeof req.body.imagesMetadata === 'string') {
+      try {
+        imagesMetadata = JSON.parse(req.body.imagesMetadata);
+      } catch {
+        imagesMetadata = [];
+      }
+    } else if (Array.isArray(req.body.imagesMetadata)) {
+      imagesMetadata = req.body.imagesMetadata;
+    }
+
+    let existingImagesList: any[] = [];
+    if (typeof req.body.existingImages === 'string') {
+      try {
+        existingImagesList = JSON.parse(req.body.existingImages);
+      } catch {
+        existingImagesList = [];
+      }
+    } else if (Array.isArray(req.body.existingImages)) {
+      existingImagesList = req.body.existingImages;
+    } else if (images) {
+      if (typeof images === 'string') {
+        try {
+          existingImagesList = JSON.parse(images);
+        } catch {
+          existingImagesList = [];
+        }
+      } else if (Array.isArray(images)) {
+        existingImagesList = images;
+      }
+    }
+
+    // If new files or existing images specified, rebuild property images
+    if (galleryFiles.length > 0 || req.body.existingImages !== undefined || images !== undefined) {
       await prisma.propertyImage.deleteMany({
         where: { propertyId: existingProperty.id },
       });
 
-      const parsedImages = await Promise.all(
-        images
-          .filter((img: any) => img && typeof img.url === 'string' && img.url.trim())
-          .map(async (img: any, idx: number) => ({
+      const parsedImages: { propertyId: string; url: string; caption?: string | null; sortOrder: number }[] = [];
+
+      // Existing images kept
+      for (const img of existingImagesList) {
+        if (img && typeof img.url === 'string' && img.url.trim()) {
+          parsedImages.push({
             propertyId: existingProperty.id,
-            url: await saveImageIfBase64(img.url.trim(), user.id),
+            url: img.url.trim(),
             caption: img.caption ? String(img.caption).trim() : null,
-            sortOrder: typeof img.sortOrder === 'number' ? img.sortOrder : idx + 1,
-          }))
-      );
+            sortOrder: typeof img.sortOrder === 'number' ? img.sortOrder : parsedImages.length + 1,
+          });
+        }
+      }
+
+      // Newly uploaded gallery files
+      for (let i = 0; i < galleryFiles.length; i++) {
+        const gFile = galleryFiles[i];
+        if (gFile && gFile.buffer) {
+          const savedUrl = await processAndSavePropertyImage(gFile.buffer, user.id);
+          const meta = imagesMetadata[i] || {};
+          parsedImages.push({
+            propertyId: existingProperty.id,
+            url: savedUrl,
+            caption: meta.caption ? String(meta.caption).trim() : null,
+            sortOrder: typeof meta.sortOrder === 'number' ? meta.sortOrder : parsedImages.length + 1,
+          });
+        }
+      }
 
       if (parsedImages.length > 0) {
         await prisma.propertyImage.createMany({
@@ -708,29 +842,138 @@ export const getMyProperties = async (
       return;
     }
 
-    const properties = await prisma.property.findMany({
+    const {
+      slug,
+      city,
+      propertyType,
+      status,
+      search,
+      searchQuery,
+      sort,
+      page = '1',
+      limit = '5',
+    } = req.query;
+
+    // Get overall seller statistics & cities and property types across all properties
+    const allSellerProperties = await prisma.property.findMany({
       where: { sellerId: user.id },
-      include: {
-        images: {
-          orderBy: { sortOrder: 'asc' },
-        },
-        seller: {
-          select: sellerSelectFields,
-        },
+      select: {
+        id: true,
+        status: true,
+        city: true,
+        propertyType: true,
       },
-      orderBy: { createdAt: 'desc' },
     });
 
     const stats = {
-      total: properties.length,
-      active: properties.filter((p) => p.status === 'active').length,
-      sold: properties.filter((p) => p.status === 'sold').length,
-      inactive: properties.filter((p) => p.status === 'inactive').length,
+      total: allSellerProperties.length,
+      active: allSellerProperties.filter((p) => (p.status || 'active') === 'active').length,
+      sold: allSellerProperties.filter((p) => p.status === 'sold').length,
+      inactive: allSellerProperties.filter((p) => p.status === 'inactive').length,
     };
+
+    const uniqueCities = Array.from(
+      new Set(allSellerProperties.map((p) => p.city).filter(Boolean))
+    );
+
+    const uniquePropertyTypes = Array.from(
+      new Set(allSellerProperties.map((p) => p.propertyType).filter(Boolean))
+    );
+
+    // Build filter where clause
+    const whereClause: any = {
+      sellerId: user.id,
+    };
+
+    // Slug Filter (exact or partial match)
+    if (slug && typeof slug === 'string' && slug.trim()) {
+      whereClause.slug = {
+        contains: slug.trim(),
+        mode: 'insensitive',
+      };
+    }
+
+    // Status Filter (active / inactive / sold)
+    if (status && status !== 'all' && typeof status === 'string') {
+      whereClause.status = status.trim();
+    }
+
+    // City Filter
+    if (city && city !== 'all' && typeof city === 'string' && city.trim()) {
+      whereClause.city = {
+        equals: city.trim(),
+        mode: 'insensitive',
+      };
+    }
+
+    // Property Type Filter
+    if (propertyType && propertyType !== 'all' && typeof propertyType === 'string' && propertyType.trim()) {
+      whereClause.propertyType = {
+        equals: propertyType.trim().toLowerCase(),
+        mode: 'insensitive',
+      };
+    }
+
+    // Text search filter across title, slug, description, city, and location
+    const q = (searchQuery || search) as string | undefined;
+    if (q && q.trim()) {
+      const searchTerm = q.trim();
+      whereClause.OR = [
+        { title: { contains: searchTerm, mode: 'insensitive' } },
+        { slug: { contains: searchTerm, mode: 'insensitive' } },
+        { description: { contains: searchTerm, mode: 'insensitive' } },
+        { city: { contains: searchTerm, mode: 'insensitive' } },
+        { location: { contains: searchTerm, mode: 'insensitive' } },
+      ];
+    }
+
+    // Sorting
+    let orderBy: any = { createdAt: 'desc' };
+    if (sort === 'price-asc' || sort === 'price_asc') {
+      orderBy = { price: 'asc' };
+    } else if (sort === 'price-desc' || sort === 'price_desc') {
+      orderBy = { price: 'desc' };
+    } else if (sort === 'area' || sort === 'area_desc') {
+      orderBy = { area: 'desc' };
+    } else if (sort === 'oldest') {
+      orderBy = { createdAt: 'asc' };
+    } else if (sort === 'newest') {
+      orderBy = { createdAt: 'desc' };
+    }
+
+    // Pagination
+    const pageNum = Math.max(1, parseInt(page as string, 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit as string, 10) || 5));
+    const skip = (pageNum - 1) * limitNum;
+
+    // Parallel fetch for total count matching filters and paginated properties
+    const [total, properties] = await Promise.all([
+      prisma.property.count({ where: whereClause }),
+      prisma.property.findMany({
+        where: whereClause,
+        include: {
+          images: {
+            orderBy: { sortOrder: 'asc' },
+          },
+          seller: {
+            select: sellerSelectFields,
+          },
+        },
+        orderBy,
+        skip,
+        take: limitNum,
+      }),
+    ]);
 
     res.status(200).json({
       success: true,
       stats,
+      cities: uniqueCities,
+      propertyTypes: uniquePropertyTypes,
+      total,
+      totalPages: Math.ceil(total / limitNum) || 1,
+      page: pageNum,
+      limit: limitNum,
       count: properties.length,
       properties,
     });
@@ -797,50 +1040,6 @@ export const getPropertyById = async (
     res.status(500).json({
       success: false,
       message: 'Internal server error while fetching property.',
-      error: error?.message,
-    });
-  }
-};
-
-/**
- * UPLOAD PROPERTY IMAGE
- * POST /api/properties/upload-image
- * Access: Private (Seller only)
- */
-export const uploadPropertyImage = async (
-  req: AuthenticatedRequest,
-  res: Response
-): Promise<void> => {
-  try {
-    const user = req.user;
-    if (!user || user.role !== 'seller') {
-      res.status(403).json({
-        success: false,
-        message: 'Forbidden. Only sellers can upload property images.',
-      });
-      return;
-    }
-
-    if (!req.file) {
-      res.status(400).json({
-        success: false,
-        message: 'Please provide an image file to upload.',
-      });
-      return;
-    }
-
-    const imageUrl = await processAndSavePropertyImage(req.file.buffer, user.id);
-
-    res.status(200).json({
-      success: true,
-      message: 'Image uploaded successfully.',
-      imageUrl,
-    });
-  } catch (error: any) {
-    logger.error('Error uploading property image:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to process property image.',
       error: error?.message,
     });
   }
